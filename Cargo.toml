@@ -1,0 +1,2 @@
+[workspace]
+members = ["pixll_core", "pixll_dsl", "pixll_gpu", "pixll_shader", "pixll_ui"]
