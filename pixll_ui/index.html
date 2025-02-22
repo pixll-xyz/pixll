@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebGPU Triangle via WASM</title>
+</head>
+<body>
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <script>
+        let devices = [], shaderModules = [], pipelines = [], nextHandle = 1;
+
+        function stringFromRust(ptr) {
+            const memory = new Uint8Array(wasm.memory.buffer);
+            let str = '';
+            for (let i = ptr; memory[i] !== 0; i++) {
+                str += String.fromCharCode(memory[i]);
+            }
+            return str;
+        }
+
+        function js_create_shader_module(deviceHandle, shaderCodePtr) {
+            const device = devices[deviceHandle];
+            const shaderCode = stringFromRust(shaderCodePtr);
+            const module = device.createShaderModule({ code: shaderCode });
+            const handle = nextHandle++;
+            shaderModules[handle] = module;
+            return handle;
+        }
+
+        function js_create_render_pipeline(deviceHandle, vsHandle, fsHandle) {
+            const device = devices[deviceHandle];
+            const vsModule = shaderModules[vsHandle];
+            const fsModule = shaderModules[fsHandle];
+            const pipeline = device.createRenderPipeline({
+                layout: "auto",
+                vertex: { module: vsModule, entryPoint: "vs_main" },
+                fragment: { module: fsModule, entryPoint: "fs_main", targets: [{ format: "bgra8unorm" }] },
+                primitive: { topology: "triangle-list" },
+            });
+            const handle = nextHandle++;
+            pipelines[handle] = pipeline;
+            return handle;
+        }
+
+        function js_render(deviceHandle, pipelineHandle) {
+            const device = devices[deviceHandle];
+            const pipeline = pipelines[pipelineHandle];
+            const context = document.getElementById("canvas").getContext("webgpu");
+            const textureView = context.getCurrentTexture().createView();
+            const commandEncoder = device.createCommandEncoder();
+            const renderPass = commandEncoder.beginRenderPass({
+                colorAttachments: [{ view: textureView, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+            });
+            renderPass.setPipeline(pipeline);
+            renderPass.draw(3, 1, 0, 0);
+            renderPass.end();
+            device.queue.submit([commandEncoder.finish()]);
+        }
+
+        let wasm;
+        async function initWebGPU() {
+            const canvas = document.getElementById("canvas");
+            const context = canvas.getContext("webgpu");
+            const gpu = navigator.gpu;
+            const adapter = await gpu.requestAdapter();
+            const device = await adapter.requestDevice();
+            context.configure({ device: device, format: "bgra8unorm" });
+            const deviceHandle = nextHandle++;
+            devices[deviceHandle] = device;
+
+            const imports = {
+                env: {
+                    js_create_shader_module,
+                    js_create_render_pipeline,
+                    js_render,
+                }
+            };
+
+            const response = await fetch('./pkg/pixll_ui.wasm');
+            const bytes = await response.arrayBuffer();
+            const { instance } = await WebAssembly.instantiate(bytes, imports);
+            wasm = instance.exports;
+            window.wasm = wasm;
+
+            wasm.on_device_ready(deviceHandle);
+        }
+        initWebGPU();
+    </script>
+</body>
+</html>
