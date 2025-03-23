@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+log = "0.4.26"
+wasm-bindgen = "0.2.100"
+web-sys = "0.3.77"
+wgpu = "24.0.3"
